@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CNTaxTools - Xem bảng kê online</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:#f5f7fa;color:#1f2937}
+h1{font-size:20px;margin:0 0 8px}
+.card{background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+input,select,button{padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px}
+button{background:#2563eb;color:#fff;border:none;cursor:pointer}
+button.secondary{background:#6b7280}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff;border-radius:8px;overflow:hidden}
+th,td{border-bottom:1px solid #e5e7eb;padding:8px 10px;text-align:left}
+th{background:#2563eb;color:#fff;position:sticky;top:0;white-space:nowrap}
+tr:hover{background:#f9fafb}
+.info{font-size:13px;color:#6b7280;margin:8px 0}
+.empty{text-align:center;padding:24px;color:#9ca3af}
+</style>
+</head>
+<body>
+<h1>Bảng kê hóa đơn (online)</h1>
+<p class="info">Đọc dữ liệu từ Google Sheets qua Apps Script. Cấu hình link + token ở ô bên dưới (hoặc qua URL ?url=...&token=...).</p>
+
+<div class="card">
+  <div class="row">
+    <input id="url" placeholder="Link Web App Apps Script (/exec)" style="flex:2;min-width:240px">
+    <input id="token" placeholder="Token" style="flex:1;min-width:160px">
+    <button onclick="saveCfg()">Lưu</button>
+    <button class="secondary" onclick="load()">Tải dữ liệu</button>
+  </div>
+  <div class="row">
+    <input id="q" placeholder="Tìm kiếm..." oninput="render()">
+    <select id="mst" onchange="render()"><option value="">Tất cả MST</option></select>
+    <select id="chieu" onchange="render()"><option value="">Tất cả chiều</option><option value="Mua vào">Mua vào</option><option value="Bán ra">Bán ra</option></select>
+    <span id="count" class="info"></span>
+  </div>
+</div>
+
+<div class="card" style="overflow:auto;max-height:70vh">
+  <table>
+    <thead><tr>
+      <th>Ngày lập</th><th>Số HĐ</th><th>Ký hiệu</th><th>Chiều</th><th>Nhóm</th>
+      <th>Người bán</th><th>Người mua</th><th>Tiền trước thuế</th><th>Tiền thuế</th><th>Tổng tiền</th><th>Trạng thái</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+let ROWS=[];
+function $(id){return document.getElementById(id);}
+function saveCfg(){localStorage.setItem('gs_url',$('url').value.trim());localStorage.setItem('gs_token',$('token').value.trim());load();}
+function loadCfg(){const p=new URLSearchParams(location.search);$('url').value=p.get('url')||localStorage.getItem('gs_url')||'';$('token').value=p.get('token')||localStorage.getItem('gs_token')||'';}
+async function load(){
+  const url=$('url').value.trim();const token=$('token').value.trim();
+  if(!url){$('count').textContent='Chưa cấu hình link Web App.';return;}
+  $('count').textContent='Đang tải...';
+  try{
+    const r=await fetch(url+'?token='+encodeURIComponent(token));
+    const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'Lỗi');
+    ROWS=j.rows||[];
+    const mstSet=new Set(ROWS.map(x=>x['MST người bán']||x['MST người mua']).filter(Boolean));
+    const sel=$('mst');const prev=sel.value;sel.innerHTML='<option value="">Tất cả MST</option>';mstSet.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});sel.value=prev;
+    render();
+    $('count').textContent='Tổng: '+ROWS.length+' dòng';
+  }catch(e){$('count').textContent='Lỗi: '+e.message;ROWS=[];render();}
+}
+function render(){
+  const q=$('q').value.toLowerCase();const mst=$('mst').value;const chieu=$('chieu').value;
+  const tbody=$('tbody');tbody.innerHTML='';
+  const filtered=ROWS.filter(x=>{
+    if(mst && x['MST người bán']!==mst && x['MST người mua']!==mst) return false;
+    if(chieu && (x['Chiều']||'')!==chieu) return false;
+    if(q && !JSON.stringify(x).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if(!filtered.length){tbody.innerHTML='<tr><td colspan="11" class="empty">Không có dữ liệu</td></tr>';return;}
+  filtered.forEach(x=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+(x['Ngày lập']||'')+'</td>'+
+      '<td>'+(x['Số HĐ']||'')+'</td>'+
+      '<td>'+(x['Ký hiệu']||'')+'</td>'+
+      '<td>'+(x['Chiều']||'')+'</td>'+
+      '<td>'+(x['Nhóm']||'')+'</td>'+
+      '<td>'+(x['Người bán']||'')+'</td>'+
+      '<td>'+(x['Người mua']||'')+'</td>'+
+      '<td>'+(x['Tiền trước thuế']||'')+'</td>'+
+      '<td>'+(x['Tiền thuế']||'')+'</td>'+
+      '<td>'+(x['Tổng tiền']||'')+'</td>'+
+      '<td>'+(x['Trạng thái HĐ']||'')+'</td>';
+    tbody.appendChild(tr);
+  });
+}
+loadCfg();
+if($('url').value) load();
+</script>
+</body>
+</html>
